@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import { useParams, useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
@@ -17,12 +18,34 @@ const PRIORITY_COLORS = {
 
 function PriorityBadge({ value, editable, onChange }) {
   const [open, setOpen] = useState(false)
+  const [coords, setCoords] = useState({ top: 0, left: 0 })
+  const btnRef = useRef()
   const c = PRIORITY_COLORS[value] || PRIORITY_COLORS.low
 
+  function handleOpen() {
+    if (!editable) return
+    if (!open) {
+      const rect = btnRef.current.getBoundingClientRect()
+      setCoords({ top: rect.bottom + window.scrollY + 4, left: rect.left + window.scrollX })
+    }
+    setOpen(o => !o)
+  }
+
+  // Close on outside click
+  useEffect(() => {
+    if (!open) return
+    function handle(e) {
+      if (!btnRef.current?.contains(e.target)) setOpen(false)
+    }
+    document.addEventListener('mousedown', handle)
+    return () => document.removeEventListener('mousedown', handle)
+  }, [open])
+
   return (
-    <div style={{ position: 'relative', display: 'inline-block' }}>
+    <div style={{ display: 'inline-block' }}>
       <button
-        onClick={() => editable && setOpen(o => !o)}
+        ref={btnRef}
+        onClick={handleOpen}
         style={{
           display: 'flex', alignItems: 'center', gap: 5,
           padding: '3px 10px', borderRadius: 20,
@@ -36,17 +59,24 @@ function PriorityBadge({ value, editable, onChange }) {
         {PRIORITY_LABELS[value] || 'Low'}
         {editable && <ChevronDown size={10} />}
       </button>
-      <AnimatePresence>
-        {open && (
+
+      {open && createPortal(
+        <AnimatePresence>
           <motion.div
             initial={{ opacity: 0, y: 4 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 4 }}
             style={{
-              position: 'absolute', top: '100%', left: 0, marginTop: 4,
-              background: 'var(--bg-card)', border: '1px solid var(--border)',
-              borderRadius: 10, overflow: 'hidden', zIndex: 100,
-              boxShadow: '0 8px 24px rgba(0,0,0,0.2)', minWidth: 100,
+              position: 'absolute',
+              top: coords.top,
+              left: coords.left,
+              background: 'var(--bg-card)',
+              border: '1px solid var(--border)',
+              borderRadius: 10,
+              overflow: 'hidden',
+              zIndex: 9999,
+              boxShadow: '0 8px 24px rgba(0,0,0,0.3)',
+              minWidth: 110,
             }}
           >
             {PRIORITY.map(p => {
@@ -54,10 +84,10 @@ function PriorityBadge({ value, editable, onChange }) {
               return (
                 <button
                   key={p}
-                  onClick={() => { onChange(p); setOpen(false) }}
+                  onMouseDown={e => { e.preventDefault(); onChange(p); setOpen(false) }}
                   style={{
                     display: 'block', width: '100%', textAlign: 'left',
-                    padding: '8px 12px', fontSize: 12, fontWeight: 600,
+                    padding: '9px 14px', fontSize: 12, fontWeight: 600,
                     color: pc.text, background: 'transparent',
                     cursor: 'pointer', border: 'none',
                   }}
@@ -69,8 +99,9 @@ function PriorityBadge({ value, editable, onChange }) {
               )
             })}
           </motion.div>
-        )}
-      </AnimatePresence>
+        </AnimatePresence>,
+        document.body
+      )}
     </div>
   )
 }
