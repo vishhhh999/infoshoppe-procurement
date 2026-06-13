@@ -1,14 +1,10 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import {
-  Lock, Eye, EyeOff, Plus, Trash2, Save, X,
-  Shield, RefreshCw, Check, ChevronDown
-} from 'lucide-react'
-import { OWNER_CREDENTIALS, loadData, saveData, generateId } from '../store/data'
+import { Lock, Eye, EyeOff, Plus, Trash2, X, Shield, Check, Loader2 } from 'lucide-react'
+import { OWNER_CREDENTIALS, loadData, addBrand, updateBrand, deleteBrand, generateId } from '../store/data'
 
 const BRAND_COLORS = ['#16a34a', '#2563eb', '#dc2626', '#7c3aed', '#0891b2', '#ea580c', '#db2777', '#65a30d']
 
-// ─── Owner Login ──────────────────────────────────────────────────────────────
 function OwnerLogin({ onAuth }) {
   const [u, setU] = useState('')
   const [p, setP] = useState('')
@@ -19,10 +15,8 @@ function OwnerLogin({ onAuth }) {
   function attempt() {
     setLoading(true)
     setError('')
-    // Artificial delay to prevent brute force
     setTimeout(() => {
       if (u === OWNER_CREDENTIALS.username && p === OWNER_CREDENTIALS.password) {
-        // Store in sessionStorage — dies when tab closes, cannot be URL-spoofed
         sessionStorage.setItem('is_owner_auth', '1')
         onAuth()
       } else {
@@ -37,16 +31,12 @@ function OwnerLogin({ onAuth }) {
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        style={{
-          background: 'var(--bg-card)', border: '1px solid var(--border)',
-          borderRadius: 20, padding: 36,
-        }}
+        style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 20, padding: 36 }}
       >
         <div style={{ textAlign: 'center', marginBottom: 28 }}>
           <div style={{
             width: 56, height: 56, borderRadius: 16, background: 'var(--accent-soft)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            margin: '0 auto 16px',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px',
           }}>
             <Shield size={26} color="var(--accent)" />
           </div>
@@ -81,15 +71,12 @@ function OwnerLogin({ onAuth }) {
             />
             <button onClick={() => setShow(s => !s)} style={{
               position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)',
-              background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)',
-              display: 'flex', alignItems: 'center',
+              background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', display: 'flex',
             }}>
               {show ? <EyeOff size={16} /> : <Eye size={16} />}
             </button>
           </div>
-
           {error && <p style={{ fontSize: 12, color: 'var(--danger)' }}>{error}</p>}
-
           <motion.button
             whileTap={{ scale: 0.97 }}
             onClick={attempt}
@@ -109,19 +96,24 @@ function OwnerLogin({ onAuth }) {
   )
 }
 
-// ─── Brand Row in Settings ─────────────────────────────────────────────────────
 function BrandRow({ brand, onUpdate, onDelete }) {
   const [showPw, setShowPw] = useState(false)
   const [editPw, setEditPw] = useState(false)
   const [newPw, setNewPw] = useState(brand.password)
+  const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
 
-  function savePw() {
+  async function savePw() {
     if (!newPw.trim()) return
-    onUpdate({ ...brand, password: newPw.trim() })
-    setEditPw(false)
-    setSaved(true)
-    setTimeout(() => setSaved(false), 2000)
+    setSaving(true)
+    try {
+      await onUpdate({ ...brand, password: newPw.trim() })
+      setEditPw(false)
+      setSaved(true)
+      setTimeout(() => setSaved(false), 2000)
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
@@ -136,7 +128,6 @@ function BrandRow({ brand, onUpdate, onDelete }) {
         display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap',
       }}
     >
-      {/* Color dot + name */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, flex: '1 1 120px', minWidth: 120 }}>
         <div style={{ width: 12, height: 12, borderRadius: '50%', background: brand.color || '#6366f1', flexShrink: 0 }} />
         <span style={{ fontSize: 15, fontWeight: 600, color: 'var(--text-primary)' }}>{brand.name}</span>
@@ -145,7 +136,6 @@ function BrandRow({ brand, onUpdate, onDelete }) {
         </span>
       </div>
 
-      {/* Password field */}
       <div style={{ flex: '2 1 200px', display: 'flex', alignItems: 'center', gap: 8 }}>
         {editPw ? (
           <>
@@ -160,8 +150,8 @@ function BrandRow({ brand, onUpdate, onDelete }) {
                 color: 'var(--text-primary)', fontSize: 13, outline: 'none',
               }}
             />
-            <button onClick={savePw} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#22c55e', display: 'flex' }}>
-              <Check size={16} />
+            <button onClick={savePw} disabled={saving} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#22c55e', display: 'flex' }}>
+              {saving ? <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> : <Check size={16} />}
             </button>
             <button onClick={() => { setEditPw(false); setNewPw(brand.password) }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', display: 'flex' }}>
               <X size={16} />
@@ -191,7 +181,6 @@ function BrandRow({ brand, onUpdate, onDelete }) {
         )}
       </div>
 
-      {/* Delete */}
       <button onClick={() => onDelete(brand.id)} style={{
         width: 32, height: 32, borderRadius: 8, border: '1px solid rgba(239,68,68,0.2)',
         background: 'rgba(239,68,68,0.08)', color: '#ef4444',
@@ -199,29 +188,37 @@ function BrandRow({ brand, onUpdate, onDelete }) {
       }}>
         <Trash2 size={14} />
       </button>
+      <style>{`@keyframes spin { from { transform: rotate(0deg) } to { transform: rotate(360deg) } }`}</style>
     </motion.div>
   )
 }
 
-// ─── Add Brand Modal ───────────────────────────────────────────────────────────
 function AddBrandModal({ onAdd, onClose }) {
   const [name, setName] = useState('')
   const [pw, setPw] = useState('')
   const [color, setColor] = useState(BRAND_COLORS[0])
   const [error, setError] = useState('')
+  const [loading, setLoading] = useState(false)
 
-  function submit() {
+  async function submit() {
     if (!name.trim()) return setError('Brand name is required.')
     if (!pw.trim()) return setError('Page password is required.')
-    onAdd({
-      id: name.trim().toLowerCase().replace(/\s+/g, '_') + '_' + generateId(),
-      name: name.trim(),
-      password: pw.trim(),
-      color,
-      columns: ['Model', 'Configuration', 'Stock', 'Required Qty', 'Notes'],
-      rows: [],
-    })
-    onClose()
+    setLoading(true)
+    try {
+      await onAdd({
+        id: name.trim().toLowerCase().replace(/\s+/g, '_') + '_' + generateId(),
+        name: name.trim(),
+        password: pw.trim(),
+        color,
+        columns: ['Model', 'Configuration', 'Stock', 'Required Qty', 'Notes'],
+        rows: [],
+      })
+      onClose()
+    } catch (e) {
+      setError('Failed to add brand: ' + e.message)
+    } finally {
+      setLoading(false)
+    }
   }
 
   return (
@@ -241,10 +238,7 @@ function AddBrandModal({ onAdd, onClose }) {
         animate={{ scale: 1, opacity: 1 }}
         exit={{ scale: 0.92, opacity: 0 }}
         onClick={e => e.stopPropagation()}
-        style={{
-          background: 'var(--bg-card)', border: '1px solid var(--border)',
-          borderRadius: 20, padding: 32, width: '100%', maxWidth: 420,
-        }}
+        style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 20, padding: 32, width: '100%', maxWidth: 420 }}
       >
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
           <h3 style={{ fontSize: 17, fontWeight: 700, color: 'var(--text-primary)' }}>Add Brand Page</h3>
@@ -268,7 +262,6 @@ function AddBrandModal({ onAdd, onClose }) {
               }}
             />
           </div>
-
           <div>
             <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', letterSpacing: '0.04em', textTransform: 'uppercase', display: 'block', marginBottom: 6 }}>Page Password</label>
             <input
@@ -283,35 +276,30 @@ function AddBrandModal({ onAdd, onClose }) {
               }}
             />
           </div>
-
           <div>
             <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', letterSpacing: '0.04em', textTransform: 'uppercase', display: 'block', marginBottom: 8 }}>Brand Color</label>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               {BRAND_COLORS.map(c => (
-                <button
-                  key={c}
-                  onClick={() => setColor(c)}
-                  style={{
-                    width: 28, height: 28, borderRadius: '50%', background: c, border: 'none',
-                    cursor: 'pointer', outline: color === c ? `3px solid ${c}` : 'none',
-                    outlineOffset: 2, transition: 'outline 0.15s',
-                  }}
-                />
+                <button key={c} onClick={() => setColor(c)} style={{
+                  width: 28, height: 28, borderRadius: '50%', background: c, border: 'none',
+                  cursor: 'pointer', outline: color === c ? `3px solid ${c}` : 'none', outlineOffset: 2,
+                }} />
               ))}
             </div>
           </div>
-
           {error && <p style={{ fontSize: 12, color: 'var(--danger)' }}>{error}</p>}
-
           <div style={{ display: 'flex', gap: 10, marginTop: 4 }}>
             <button onClick={onClose} style={{
               flex: 1, padding: '11px 0', borderRadius: 10, border: '1px solid var(--border)',
               background: 'transparent', color: 'var(--text-secondary)', fontSize: 14, fontWeight: 600, cursor: 'pointer',
             }}>Cancel</button>
-            <button onClick={submit} style={{
+            <button onClick={submit} disabled={loading} style={{
               flex: 2, padding: '11px 0', borderRadius: 10, border: 'none',
-              background: 'var(--accent)', color: '#fff', fontSize: 14, fontWeight: 600, cursor: 'pointer',
-            }}>Add Brand</button>
+              background: 'var(--accent)', color: '#fff', fontSize: 14, fontWeight: 600,
+              cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? 0.7 : 1,
+            }}>
+              {loading ? 'Adding...' : 'Add Brand'}
+            </button>
           </div>
         </div>
       </motion.div>
@@ -319,32 +307,33 @@ function AddBrandModal({ onAdd, onClose }) {
   )
 }
 
-// ─── Main Settings Page ────────────────────────────────────────────────────────
 export default function Settings() {
   const [authed, setAuthed] = useState(() => sessionStorage.getItem('is_owner_auth') === '1')
   const [brands, setBrands] = useState([])
+  const [loading, setLoading] = useState(true)
   const [showAdd, setShowAdd] = useState(false)
 
   useEffect(() => {
-    if (authed) setBrands(loadData())
+    if (!authed) { setLoading(false); return }
+    loadData()
+      .then(setBrands)
+      .finally(() => setLoading(false))
   }, [authed])
 
-  function persist(updated) {
-    setBrands(updated)
-    saveData(updated)
+  async function handleUpdate(updated) {
+    await updateBrand(updated)
+    setBrands(b => b.map(x => x.id === updated.id ? { ...x, ...updated } : x))
   }
 
-  function handleUpdate(updatedBrand) {
-    persist(brands.map(b => b.id === updatedBrand.id ? updatedBrand : b))
-  }
-
-  function handleDelete(id) {
+  async function handleDelete(id) {
     if (!confirm('Delete this brand page and all its data?')) return
-    persist(brands.filter(b => b.id !== id))
+    await deleteBrand(id)
+    setBrands(b => b.filter(x => x.id !== id))
   }
 
-  function handleAdd(brand) {
-    persist([...brands, brand])
+  async function handleAdd(brand) {
+    await addBrand(brand)
+    setBrands(b => [...b, { ...brand }])
   }
 
   function handleLogout() {
@@ -376,59 +365,56 @@ export default function Settings() {
           </button>
         </div>
 
-        {/* Summary bar */}
-        <div style={{
-          display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
-          gap: 12, marginBottom: 28,
-        }}>
-          {[
-            { label: 'Brand Pages', value: brands.length },
-            { label: 'Total Models', value: brands.reduce((a, b) => a + b.rows.length, 0) },
-            { label: 'High Priority', value: brands.reduce((a, b) => a + b.rows.filter(r => r.priority === 'high').length, 0) },
-          ].map(s => (
-            <div key={s.label} style={{
-              background: 'var(--bg-card)', border: '1px solid var(--border)',
-              borderRadius: 12, padding: '16px 20px',
-            }}>
-              <p style={{ fontSize: 22, fontWeight: 700, color: 'var(--text-primary)' }}>{s.value}</p>
-              <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>{s.label}</p>
+        {loading ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, color: 'var(--text-muted)', padding: '40px 0' }}>
+            <Loader2 size={18} style={{ animation: 'spin 1s linear infinite' }} />
+            <span style={{ fontSize: 14 }}>Loading...</span>
+            <style>{`@keyframes spin { from { transform: rotate(0deg) } to { transform: rotate(360deg) } }`}</style>
+          </div>
+        ) : (
+          <>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 12, marginBottom: 28 }}>
+              {[
+                { label: 'Brand Pages', value: brands.length },
+                { label: 'Total Models', value: brands.reduce((a, b) => a + b.rows.length, 0) },
+                { label: 'High Priority', value: brands.reduce((a, b) => a + b.rows.filter(r => r.priority === 'high').length, 0) },
+              ].map(s => (
+                <div key={s.label} style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 12, padding: '16px 20px' }}>
+                  <p style={{ fontSize: 22, fontWeight: 700, color: 'var(--text-primary)' }}>{s.value}</p>
+                  <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>{s.label}</p>
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
 
-        {/* Brand list */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
-          <h2 style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-secondary)', letterSpacing: '0.04em', textTransform: 'uppercase' }}>Brand Pages</h2>
-          <motion.button
-            whileTap={{ scale: 0.95 }}
-            onClick={() => setShowAdd(true)}
-            style={{
-              display: 'flex', alignItems: 'center', gap: 7, padding: '8px 16px',
-              borderRadius: 10, border: 'none', background: 'var(--accent)',
-              color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer',
-            }}
-          >
-            <Plus size={14} /> Add Brand
-          </motion.button>
-        </div>
-
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          <AnimatePresence>
-            {brands.map(brand => (
-              <BrandRow
-                key={brand.id}
-                brand={brand}
-                onUpdate={handleUpdate}
-                onDelete={handleDelete}
-              />
-            ))}
-          </AnimatePresence>
-          {brands.length === 0 && (
-            <div style={{ textAlign: 'center', padding: '48px 0', color: 'var(--text-muted)', fontSize: 14 }}>
-              No brand pages yet. Add one to get started.
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+              <h2 style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-secondary)', letterSpacing: '0.04em', textTransform: 'uppercase' }}>Brand Pages</h2>
+              <motion.button
+                whileTap={{ scale: 0.95 }}
+                onClick={() => setShowAdd(true)}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 7, padding: '8px 16px',
+                  borderRadius: 10, border: 'none', background: 'var(--accent)',
+                  color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer',
+                }}
+              >
+                <Plus size={14} /> Add Brand
+              </motion.button>
             </div>
-          )}
-        </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <AnimatePresence>
+                {brands.map(brand => (
+                  <BrandRow key={brand.id} brand={brand} onUpdate={handleUpdate} onDelete={handleDelete} />
+                ))}
+              </AnimatePresence>
+              {brands.length === 0 && (
+                <div style={{ textAlign: 'center', padding: '48px 0', color: 'var(--text-muted)', fontSize: 14 }}>
+                  No brand pages yet. Add one to get started.
+                </div>
+              )}
+            </div>
+          </>
+        )}
       </motion.div>
 
       <AnimatePresence>

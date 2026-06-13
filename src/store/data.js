@@ -1,79 +1,105 @@
-// Owner credentials — hardcoded, never exposed via URL
+import { supabase } from './supabase'
+
 export const OWNER_CREDENTIALS = {
   username: 'admin',
   password: 'infoshoppe2710$',
 }
 
-const STORAGE_KEY = 'infoshoppe_data'
-
-const DEFAULT_BRANDS = [
-  {
-    id: 'acer',
-    name: 'Acer',
-    password: 'acer@2024',
-    color: '#16a34a',
-    columns: ['Model', 'Configuration', 'Stock', 'Required Qty', 'Notes'],
-    rows: [
-      { id: 'r1', Model: 'Aspire Lite AL15', Configuration: 'i5 13th / 16GB / 512GB SSD', Stock: '12', 'Required Qty': '20', Notes: '', priority: 'high' },
-      { id: 'r2', Model: 'Nitro V', Configuration: 'i5 / RTX 4050 / 16GB / 512GB', Stock: '4', 'Required Qty': '8', Notes: '', priority: 'medium' },
-    ],
-  },
-  {
-    id: 'hp',
-    name: 'HP',
-    password: 'hp@2024',
-    color: '#2563eb',
-    columns: ['Model', 'Configuration', 'Stock', 'Required Qty', 'Notes'],
-    rows: [
-      { id: 'r3', Model: 'Victus 15', Configuration: 'i5 12th / 8GB / 512GB SSD', Stock: '8', 'Required Qty': '15', Notes: '', priority: 'medium' },
-    ],
-  },
-  {
-    id: 'lenovo',
-    name: 'Lenovo',
-    password: 'lenovo@2024',
-    color: '#dc2626',
-    columns: ['Model', 'Configuration', 'Stock', 'Required Qty', 'Notes'],
-    rows: [
-      { id: 'r4', Model: 'IdeaPad Slim 5', Configuration: 'Ryzen 5 / 16GB / 512GB SSD', Stock: '6', 'Required Qty': '12', Notes: '', priority: 'low' },
-    ],
-  },
-  {
-    id: 'dell',
-    name: 'Dell',
-    password: 'dell@2024',
-    color: '#7c3aed',
-    columns: ['Model', 'Configuration', 'Stock', 'Required Qty', 'Notes'],
-    rows: [
-      { id: 'r5', Model: 'Inspiron 15', Configuration: 'i5 12th / 8GB / 256GB SSD', Stock: '10', 'Required Qty': '10', Notes: '', priority: 'low' },
-    ],
-  },
-  {
-    id: 'asus',
-    name: 'Asus',
-    password: 'asus@2024',
-    color: '#0891b2',
-    columns: ['Model', 'Configuration', 'Stock', 'Required Qty', 'Notes'],
-    rows: [
-      { id: 'r6', Model: 'VivoBook 15', Configuration: 'Ryzen 7 / 16GB / 512GB SSD', Stock: '5', 'Required Qty': '10', Notes: '', priority: 'medium' },
-    ],
-  },
-]
-
-export function loadData() {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    if (!raw) return DEFAULT_BRANDS
-    return JSON.parse(raw)
-  } catch {
-    return DEFAULT_BRANDS
-  }
-}
-
-export function saveData(brands) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(brands))
-}
-
 export function generateId() {
   return 'id_' + Math.random().toString(36).slice(2, 10)
+}
+
+// ─── Fetch all brands with their rows ─────────────────────────────────────────
+export async function loadData() {
+  const { data: brands, error: brandsErr } = await supabase
+    .from('brands')
+    .select('*')
+    .order('created_at', { ascending: true })
+
+  if (brandsErr) throw brandsErr
+
+  const { data: rows, error: rowsErr } = await supabase
+    .from('rows')
+    .select('*')
+    .order('position', { ascending: true })
+
+  if (rowsErr) throw rowsErr
+
+  // Attach rows to their brands, expand jsonb data into flat object
+  return brands.map(b => ({
+    id: b.id,
+    name: b.name,
+    password: b.password,
+    color: b.color,
+    columns: b.columns || [],
+    rows: rows
+      .filter(r => r.brand_id === b.id)
+      .map(r => ({ id: r.id, priority: r.priority, ...r.data })),
+  }))
+}
+
+// ─── Save a brand's rows + columns after editing ───────────────────────────────
+export async function saveBrandData(brandId, columns, localRows) {
+  // Update columns on brand
+  const { error: brandErr } = await supabase
+    .from('brands')
+    .update({ columns })
+    .eq('id', brandId)
+
+  if (brandErr) throw brandErr
+
+  // Delete all existing rows for this brand and re-insert
+  // Simpler than diffing -- row counts will be small
+  const { error: delErr } = await supabase
+    .from('rows')
+    .delete()
+    .eq('brand_id', brandId)
+
+  if (delErr) throw delErr
+
+  if (localRows.length === 0) return
+
+  const toInsert = localRows.map((r, i) => {
+    const { id, priority, ...rest } = r
+    return {
+      id,
+      brand_id: brandId,
+      priority: priority || 'low',
+      data: rest,
+      position: i,
+    }
+  })
+
+  const { error: insertErr } = await supabase
+    .from('rows')
+    .insert(toInsert)
+
+  if (insertErr) throw insertErr
+}
+
+// ─── Settings: add a new brand ────────────────────────────────────────────────
+export async function addBrand(brand) {
+  const { error } = await supabase.from('brands').insert({
+    id: brand.id,
+    name: brand.name,
+    password: brand.password,
+    color: brand.color,
+    columns: brand.columns,
+  })
+  if (error) throw error
+}
+
+// ─── Settings: update brand password or color ─────────────────────────────────
+export async function updateBrand(brand) {
+  const { error } = await supabase
+    .from('brands')
+    .update({ password: brand.password, color: brand.color, name: brand.name })
+    .eq('id', brand.id)
+  if (error) throw error
+}
+
+// ─── Settings: delete a brand (rows cascade) ──────────────────────────────────
+export async function deleteBrand(id) {
+  const { error } = await supabase.from('brands').delete().eq('id', id)
+  if (error) throw error
 }

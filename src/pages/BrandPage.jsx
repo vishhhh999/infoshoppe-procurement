@@ -3,9 +3,9 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   Lock, Unlock, Eye, EyeOff, Plus, Save, Trash2,
-  ArrowLeft, ChevronDown, X, Check
+  ArrowLeft, ChevronDown, X, Check, Loader2
 } from 'lucide-react'
-import { loadData, saveData, generateId } from '../store/data'
+import { loadData, saveBrandData, generateId } from '../store/data'
 
 const PRIORITY = ['high', 'medium', 'low']
 const PRIORITY_LABELS = { high: 'High', medium: 'Med', low: 'Low' }
@@ -46,8 +46,7 @@ function PriorityBadge({ value, editable, onChange }) {
               position: 'absolute', top: '100%', left: 0, marginTop: 4,
               background: 'var(--bg-card)', border: '1px solid var(--border)',
               borderRadius: 10, overflow: 'hidden', zIndex: 100,
-              boxShadow: '0 8px 24px rgba(0,0,0,0.2)',
-              minWidth: 100,
+              boxShadow: '0 8px 24px rgba(0,0,0,0.2)', minWidth: 100,
             }}
           >
             {PRIORITY.map(p => {
@@ -132,8 +131,7 @@ function PasswordModal({ brandName, onSuccess, onClose }) {
             style={{
               width: '100%', padding: '12px 44px 12px 16px',
               background: 'var(--bg-secondary)', border: `1px solid ${error ? 'var(--danger)' : 'var(--border)'}`,
-              borderRadius: 10, fontSize: 14, color: 'var(--text-primary)',
-              outline: 'none',
+              borderRadius: 10, fontSize: 14, color: 'var(--text-primary)', outline: 'none',
             }}
           />
           <button
@@ -167,8 +165,9 @@ function PasswordModal({ brandName, onSuccess, onClose }) {
 export default function BrandPage() {
   const { id } = useParams()
   const navigate = useNavigate()
-  const [brands, setBrands] = useState([])
   const [brand, setBrand] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
   const [editMode, setEditMode] = useState(false)
   const [showPwModal, setShowPwModal] = useState(false)
   const [localRows, setLocalRows] = useState([])
@@ -177,26 +176,42 @@ export default function BrandPage() {
   const [saved, setSaved] = useState(false)
   const [newColName, setNewColName] = useState('')
   const [addingCol, setAddingCol] = useState(false)
+  const [error, setError] = useState(null)
 
   useEffect(() => {
-    const data = loadData()
-    setBrands(data)
-    const b = data.find(x => x.id === id)
-    if (b) {
-      setBrand(b)
-      setLocalRows(b.rows.map(r => ({ ...r })))
-      setLocalCols([...b.columns])
-    }
+    setLoading(true)
+    setEditMode(false)
+    loadData()
+      .then(brands => {
+        const b = brands.find(x => x.id === id)
+        if (b) {
+          setBrand(b)
+          setLocalRows(b.rows.map(r => ({ ...r })))
+          setLocalCols([...b.columns])
+        }
+      })
+      .catch(e => setError(e.message))
+      .finally(() => setLoading(false))
   }, [id])
 
-  // Reset edit mode on any navigation away
-  useEffect(() => {
-    return () => setEditMode(false)
-  }, [id])
+  if (loading) return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10, color: 'var(--text-muted)', padding: '60px 40px' }}>
+      <Loader2 size={18} style={{ animation: 'spin 1s linear infinite' }} />
+      <span style={{ fontSize: 14 }}>Loading...</span>
+      <style>{`@keyframes spin { from { transform: rotate(0deg) } to { transform: rotate(360deg) } }`}</style>
+    </div>
+  )
+
+  if (error) return (
+    <div style={{ padding: 40, color: '#ef4444', fontSize: 14 }}>Error: {error}</div>
+  )
 
   if (!brand) return (
     <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)' }}>
-      Brand not found. <button onClick={() => navigate('/')} style={{ color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer' }}>Go back</button>
+      Brand not found.{' '}
+      <button onClick={() => navigate('/')} style={{ color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer' }}>
+        Go back
+      </button>
     </div>
   )
 
@@ -242,16 +257,33 @@ export default function BrandPage() {
     setDirty(true)
   }
 
-  function handleSave() {
-    const updated = brands.map(b =>
-      b.id === id ? { ...b, rows: localRows, columns: localCols } : b
-    )
-    saveData(updated)
-    setBrands(updated)
-    setBrand(updated.find(b => b.id === id))
+  async function handleSave() {
+    setSaving(true)
+    try {
+      await saveBrandData(id, localCols, localRows)
+      // Refresh brand data from DB
+      const brands = await loadData()
+      const b = brands.find(x => x.id === id)
+      if (b) {
+        setBrand(b)
+        setLocalRows(b.rows.map(r => ({ ...r })))
+        setLocalCols([...b.columns])
+      }
+      setDirty(false)
+      setSaved(true)
+      setTimeout(() => setSaved(false), 2500)
+    } catch (e) {
+      alert('Save failed: ' + e.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  function handleLock() {
+    setEditMode(false)
+    setLocalRows(brand.rows.map(r => ({ ...r })))
+    setLocalCols([...brand.columns])
     setDirty(false)
-    setSaved(true)
-    setTimeout(() => setSaved(false), 2000)
   }
 
   const brandColor = brand.color || 'var(--accent)'
@@ -286,25 +318,30 @@ export default function BrandPage() {
               initial={{ opacity: 0, scale: 0.9 }}
               animate={{ opacity: 1, scale: 1 }}
               onClick={handleSave}
+              disabled={saving}
               style={{
                 display: 'flex', alignItems: 'center', gap: 8,
                 padding: '9px 18px', borderRadius: 10, border: 'none',
                 background: saved ? '#22c55e' : 'var(--accent)',
-                color: '#fff', fontSize: 14, fontWeight: 600, cursor: 'pointer',
+                color: '#fff', fontSize: 14, fontWeight: 600,
+                cursor: saving ? 'not-allowed' : 'pointer',
+                opacity: saving ? 0.8 : 1,
                 transition: 'background 0.3s',
               }}
             >
-              {saved ? <Check size={15} /> : <Save size={15} />}
-              {saved ? 'Saved' : 'Save Changes'}
+              {saving
+                ? <><Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> Saving...</>
+                : saved
+                  ? <><Check size={15} /> Saved</>
+                  : <><Save size={15} /> Save Changes</>
+              }
+              <style>{`@keyframes spin { from { transform: rotate(0deg) } to { transform: rotate(360deg) } }`}</style>
             </motion.button>
           )}
 
           <motion.button
             whileTap={{ scale: 0.95 }}
-            onClick={() => {
-              if (editMode) { setEditMode(false); setLocalRows(brand.rows.map(r => ({ ...r }))); setLocalCols([...brand.columns]); setDirty(false) }
-              else setShowPwModal(true)
-            }}
+            onClick={() => editMode ? handleLock() : setShowPwModal(true)}
             style={{
               display: 'flex', alignItems: 'center', gap: 8,
               padding: '9px 18px', borderRadius: 10,
@@ -319,7 +356,7 @@ export default function BrandPage() {
         </div>
       </div>
 
-      {/* Edit mode banner */}
+      {/* Edit banner */}
       <AnimatePresence>
         {editMode && (
           <motion.div
@@ -334,7 +371,7 @@ export default function BrandPage() {
             }}
           >
             <Unlock size={14} />
-            Edit mode active — changes are local until you save. Refreshing discards unsaved changes.
+            Edit mode active — save changes to sync across all viewers.
           </motion.div>
         )}
       </AnimatePresence>
@@ -398,7 +435,6 @@ export default function BrandPage() {
                   style={{
                     borderBottom: '1px solid var(--border-subtle)',
                     background: i % 2 === 0 ? 'var(--bg-card)' : 'var(--bg-secondary)',
-                    transition: 'background 0.15s',
                   }}
                   onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-card-hover)'}
                   onMouseLeave={e => e.currentTarget.style.background = i % 2 === 0 ? 'var(--bg-card)' : 'var(--bg-secondary)'}
@@ -434,7 +470,8 @@ export default function BrandPage() {
                   {editMode && (
                     <td style={{ padding: '10px 16px' }}>
                       <button onClick={() => deleteRow(row.id)} style={{
-                        width: 30, height: 30, borderRadius: 8, border: '1px solid rgba(239,68,68,0.2)',
+                        width: 30, height: 30, borderRadius: 8,
+                        border: '1px solid rgba(239,68,68,0.2)',
                         background: 'rgba(239,68,68,0.08)', color: '#ef4444',
                         cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
                       }}>
